@@ -1,0 +1,97 @@
+
+#include <WiFi.h>
+#include <Firebase_ESP_Client.h>
+
+#define WIFI_SSID "YOUR_WIFI_NAME"
+#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+
+#define API_KEY "YOUR_FIREBASE_API_KEY"
+#define DATABASE_URL "YOUR_FIREBASE_DATABASE_URL"
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
+#define TOTAL_SLOTS 4
+
+int trigPins[TOTAL_SLOTS] = {5, 18, 19, 21};
+int echoPins[TOTAL_SLOTS] = {13, 14, 27, 26};
+
+int distance[TOTAL_SLOTS];
+String status[TOTAL_SLOTS];
+
+void setup() {
+  Serial.begin(115200);
+
+  for (int i = 0; i < TOTAL_SLOTS; i++) {
+    pinMode(trigPins[i], OUTPUT);
+    pinMode(echoPins[i], INPUT);
+  }
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("Connecting to WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected");
+
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+}
+
+int getDistance(int slot) {
+  digitalWrite(trigPins[slot], LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPins[slot], HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPins[slot], LOW);
+
+  long duration = pulseIn(
+    echoPins[slot], HIGH, 30000
+  );
+
+  if (duration == 0) return 999;
+
+  return duration * 0.034 / 2;
+}
+
+void loop() {
+
+  for (int i = 0; i < TOTAL_SLOTS; i++) {
+
+    distance[i] = getDistance(i);
+
+    if (distance[i] < 15) {
+      status[i] = "OCCUPIED";
+    } else {
+      status[i] = "AVAILABLE";
+    }
+
+    Serial.print("Slot ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.println(status[i]);
+
+    String path = "/Parking/Slot" + String(i + 1);
+
+    if (Firebase.ready()) {
+      Firebase.RTDB.setString(
+        &fbdo,
+        path.c_str(),
+        status[i]
+      );
+    }
+
+    delay(100);
+  }
+
+  delay(1000);
+}
